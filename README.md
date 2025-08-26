@@ -1,4 +1,3 @@
-# etf-proxy// /api/quote.js
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
@@ -12,19 +11,38 @@ export default async function handler(req, res) {
     const key = process.env.FINNHUB_KEY;
     if (!key) return res.status(500).json({ error: "FINNHUB_KEY is not set in environment variables" });
 
-    const tickers = symbols.split(",").map(s => s.trim().toUpperCase()).filter(s => /^[A-Z0-9.\-]{1,12}$/.test(s));
-    const results = [];
+    const tickers = symbols
+      .split(",")
+      .map(s => s.trim().toUpperCase())
+      .filter(s => /^[A-Z0-9.\-]{1,12}$/.test(s));
 
+    const results = [];
     for (const t of tickers) {
       const url = `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(t)}&token=${encodeURIComponent(key)}`;
       const r = await fetch(url, { cache: "no-store" });
-      if (!r.ok) { results.push({ symbol: t, error: `HTTP ${r.status}` }); continue; }
+      if (!r.ok) {
+        results.push({ symbol: t, error: `HTTP ${r.status}` });
+        continue;
+      }
+
       const j = await r.json();
       const price = Number.isFinite(j.c) ? j.c : null;
       const prev = Number.isFinite(j.pc) ? j.pc : null;
-      const dp = (Number.isFinite(price) && Number.isFinite(prev) && prev !== 0) ? ((price - prev) / prev) * 100 : (Number.isFinite(j.dp) ? j.dp : null);
-      results.push({ symbol: t, price, changePercent: Number.isFinite(dp) ? dp : null, prevClose: prev, time: j.t ? new Date(j.t * 1000).toISOString() : null, source: "Finnhub" });
-      await new Promise(r => setTimeout(r, 75)); // gentle on free-rate limits
+      const dp = (Number.isFinite(price) && Number.isFinite(prev) && prev !== 0)
+        ? ((price - prev) / prev) * 100
+        : (Number.isFinite(j.dp) ? j.dp : null);
+
+      results.push({
+        symbol: t,
+        price,
+        changePercent: Number.isFinite(dp) ? dp : null,
+        prevClose: prev,
+        time: j.t ? new Date(j.t * 1000).toISOString() : null,
+        source: "Finnhub"
+      });
+
+      // Small delay to avoid hitting free-tier rate limits
+      await new Promise(r => setTimeout(r, 75));
     }
 
     res.setHeader("Cache-Control", "s-maxage=15, stale-while-revalidate=30");
